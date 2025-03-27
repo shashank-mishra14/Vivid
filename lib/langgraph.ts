@@ -33,13 +33,21 @@ const trimmer = trimMessages({
 
 // Connect to wxflows
 const toolClient = new wxflows({
-  endpoint: process.env.WXFLOWS_ENDPOINT || "",
+  endpoint: process.env.WXFLOWS_ENDPOINT ? `https://${process.env.WXFLOWS_ENDPOINT}` : "",
   apikey: process.env.WXFLOWS_APIKEY,
 });
 
-// Retrieve the tools
-const tools = await toolClient.lcTools;
-const toolNode = new ToolNode(tools);
+// Initialize tools
+let toolNode: ToolNode;
+
+try {
+  // Retrieve the tools and create tool node
+  const tools = await toolClient.lcTools;
+  toolNode = new ToolNode(tools);
+} catch (error) {
+  console.error("Error initializing tools:", error);
+  toolNode = new ToolNode([]);
+}
 
 // Connect to the LLM provider with better tool instructions
 const initialiseModel = () => {
@@ -68,12 +76,9 @@ const initialiseModel = () => {
             // });
           }
         },
-        // handleLLMNewToken: async (token: string) => {
-        //   // console.log("🔤 New token:", token);
-        // },
       },
     ],
-  }).bindTools(tools);
+  });
 
   return model;
 };
@@ -108,9 +113,7 @@ const createWorkflow = () => {
 
       // Create the prompt template with system message and messages placeholder
       const promptTemplate = ChatPromptTemplate.fromMessages([
-        new SystemMessage(systemContent, {
-          cache_control: { type: "ephemeral" },
-        }),
+        new SystemMessage(systemContent),
         new MessagesPlaceholder("messages"),
       ]);
 

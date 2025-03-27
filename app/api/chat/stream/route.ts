@@ -12,8 +12,6 @@ import {
   SSE_LINE_DELIMITER,
 } from "@/lib/types";
 
-export const runtime = "edge";
-
 function sendSSEMessage(
   writer: WritableStreamDefaultWriter<Uint8Array>,
   data: StreamMessage
@@ -44,9 +42,8 @@ export async function POST(req: Request) {
     const response = new Response(stream.readable, {
       headers: {
         "Content-Type": "text/event-stream",
-        // "Cache-Control": "no-cache, no-transform",
         Connection: "keep-alive",
-        "X-Accel-Buffering": "no", // Disable buffering for nginx which is required for SSE to work properly
+        "X-Accel-Buffering": "no",
       },
     });
 
@@ -78,18 +75,24 @@ export async function POST(req: Request) {
 
           // Process the events
           for await (const event of eventStream) {
-            // console.log("🔄 Event:", event);
-
             if (event.event === "on_chat_model_stream") {
               const token = event.data.chunk;
               if (token) {
-                // Access the text property from the AIMessageChunk
-                const text = token.content.at(0)?.["text"];
-                if (text) {
+                // Handle OpenAI's streaming format
+                const content = token.content;
+                if (typeof content === "string") {
                   await sendSSEMessage(writer, {
                     type: StreamMessageType.Token,
-                    token: text,
+                    token: content,
                   });
+                } else if (Array.isArray(content) && content.length > 0) {
+                  const text = content[0]?.text;
+                  if (text) {
+                    await sendSSEMessage(writer, {
+                      type: StreamMessageType.Token,
+                      token: text,
+                    });
+                  }
                 }
               }
             } else if (event.event === "on_tool_start") {
@@ -109,7 +112,7 @@ export async function POST(req: Request) {
             }
           }
 
-          // Send completion message without storing the response
+          // Send completion message
           await sendSSEMessage(writer, { type: StreamMessageType.Done });
         } catch (streamError) {
           console.error("Error in event stream:", streamError);
